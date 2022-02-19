@@ -1,0 +1,18 @@
+Project 1 (Reverse Engineering a Network App)
+COMP 375 (Computer Networks) @ USD
+
+1. Your full name: 
+
+2. Your USD email address: 
+
+3. A typed copy of USD's academic integrity pledge, found on page 3 of 
+   https://www.sandiego.edu/conduct/documents/HonorCode.pdf.
+   To be clear, it is the text that starts, "I pledge to demonstrate...".
+
+4. Hours spent on project:
+	- Wireshark Analysis:
+	- C programming:
+
+5. Known bugs:
+
+7. (Optional) Comments about the project:	
