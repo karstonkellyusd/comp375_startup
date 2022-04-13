@@ -3,7 +3,7 @@
  *
  * Reliable data transport (RDT) library implementation.
  *
- * Author(s):
+ * Author(s): Karston Kelly, Russell Gokemeijer
  *
  */
 
