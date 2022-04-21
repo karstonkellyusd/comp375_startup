@@ -48,6 +48,7 @@ ReliableSocket::ReliableSocket() {
 	this->state = INIT;
 }
 
+// Is called in receiver.cpp
 void ReliableSocket::accept_connection(int port_num) {
 	if (this->state != INIT) {
 		cerr << "Cannot call accept on used socket\n";
@@ -102,10 +103,15 @@ void ReliableSocket::accept_connection(int port_num) {
 	// message from the other end gets lost?)
 	// Note that this function is called by the connection receiver/listener.
 
+
+	// Send an Ack indicating that we are good to go - Let the sender know which socket we have allocated to them
+
+
 	this->state = ESTABLISHED;
 	cerr << "INFO: Connection ESTABLISHED\n";
 }
 
+// Is called in Sender.cpp
 void ReliableSocket::connect_to_remote(char *hostname, int port_num) {
 	if (this->state != INIT) {
 		cerr << "Cannot call connect_to_remote on used socket\n";
@@ -142,6 +148,13 @@ void ReliableSocket::connect_to_remote(char *hostname, int port_num) {
 	// TODO: Again, you should implement a handshaking protocol for the
 	// connection setup.
 	// Note that this function is called by the connection initiator.
+
+	// Start timer, wait for ACK
+	// Wait to receive an Ack indicating that the receiver is open to connections 
+	// If timeout - Send again
+	// Maybe: If 3 failed attempts, disconnect?
+	// While(not 3 failed attempts)
+	// 		Do the thing
 	
 	this->state = ESTABLISHED;
 	cerr << "INFO: Connection ESTABLISHED\n";
@@ -166,6 +179,7 @@ void ReliableSocket::set_timeout_length(uint32_t timeout_length_ms) {
 	}
 }
 
+// In Sender.cpp
 void ReliableSocket::send_data(const void *data, int length) {
 	if (this->state != ESTABLISHED) {
 		cerr << "INFO: Cannot send: Connection not established.\n";
@@ -196,10 +210,13 @@ void ReliableSocket::send_data(const void *data, int length) {
 	// Utilize the set_timeout_length function to make sure you timeout after
 	// a certain amount of waiting (so you can try sending again).
 
+	// Start a timer waiting for an Ack from the receiver
+
+
 	sequence_number++;
 }
 
-
+// In receiver.cpp
 int ReliableSocket::receive_data(char buffer[MAX_DATA_SIZE]) {
 	if (this->state != ESTABLISHED) {
 		cerr << "INFO: Cannot receive: Connection not established.\n";
@@ -225,6 +242,14 @@ int ReliableSocket::receive_data(char buffer[MAX_DATA_SIZE]) {
 	// received is the type you want (RDT_DATA) and has the right sequence
 	// number.
 
+	// Check sequence number to ensure proper ordering of data
+	// Check that it is an RDT_DATA type
+	// Keep track of overall data received in recv_data_size
+	// RDT_ACK message the cumulative data received
+	// Message type will have an ack number equal to the sequence number
+	// Loop until all data received or long timeout
+
+
 	cerr << "INFO: Received segment. " 
 		 << "seq_num = "<< ntohl(hdr->sequence_number) << ", "
 		 << "ack_num = "<< ntohl(hdr->ack_number) << ", "
@@ -236,7 +261,7 @@ int ReliableSocket::receive_data(char buffer[MAX_DATA_SIZE]) {
 	return recv_data_size;
 }
 
-
+// In both receiver.cpp and sender.cpp
 void ReliableSocket::close_connection() {
 	// Construct a RDT_CLOSE message to indicate to the remote host that we
 	// want to end this connection.
@@ -255,7 +280,17 @@ void ReliableSocket::close_connection() {
 	// into closing the connection to make sure both sides know that the
 	// connection has been closed.
 
+	// Tell the other one that we are closing connection
+	// Wait for ack indicating closed connection
+	// If timeout, send again
+	// If received ack, close connection
+
 	if (close(this->sock_fd) < 0) {
 		perror("close_connection close");
 	}
+}
+
+
+bool isCorrupt(char *checksum, char *payload){
+	break;
 }

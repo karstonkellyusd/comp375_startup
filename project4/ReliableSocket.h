@@ -21,6 +21,8 @@ struct RDTHeader {
 
 // TODO: Again, you'll likely need to add new statuses (is that a word?) as
 // you start implementing the reliable protocol.
+
+// Maybe use an INPROGRESS status?
 enum connection_status { INIT, ESTABLISHED, CLOSED };
 
 /**
@@ -107,10 +109,28 @@ private:
 	 * @param timeout_length_ms Length of timeout period in milliseconds.
 	 */
 	void set_timeout_length(uint32_t timeout_length_ms);
-
+	
 	/*
 	 * Add new member functions (i.e. methods) after this point.
 	 * Remember that only the comment and header line goes here. The
 	 * implementation should be in the .cpp file.
 	 */
+
+	/**
+	 * Function that will ensure the data being sent and received 
+	 * is not corrupted according to some checksum value.
+	 * 
+	 * @param checksum 
+	 * The value that will be used to verify the integrity of data being sent.
+	 * 
+	 * @param payload 
+	 * The data whose integrity will be checked.
+	 * 
+	 * @return true 
+	 * The data is corrupt.
+	 * 
+	 * @return false 
+	 * The data is not corrupt. 
+	 */
+	bool isCorrupt(char *checksum, char *payload);
 };
