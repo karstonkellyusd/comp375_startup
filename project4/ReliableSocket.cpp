@@ -106,7 +106,14 @@ void ReliableSocket::accept_connection(int port_num) {
 
 	// Send an Ack indicating that we are good to go - Let the sender know which socket we have allocated to them
 
-
+	hdr->ack_number = htonl(0);
+	hdr->sequence_number = htonl(this->sequence_number);
+	hdr->type = RDT_CONN;
+	if (send(this->sock_fd, segment, sizeof(RDTHeader), 0) < 0) {
+		perror("ERROR: Did not properly send ACK");
+	}
+	this->sequence_number += 1;
+	
 	this->state = ESTABLISHED;
 	cerr << "INFO: Connection ESTABLISHED\n";
 }
@@ -141,23 +148,45 @@ void ReliableSocket::connect_to_remote(char *hostname, int port_num) {
 	hdr->ack_number = htonl(0);
 	hdr->sequence_number = htonl(0);
 	hdr->type = RDT_CONN;
-	if (send(this->sock_fd, segment, sizeof(RDTHeader), 0) < 0) {
-		perror("conn1 send");
-	}
-
+	
 	// TODO: Again, you should implement a handshaking protocol for the
 	// connection setup.
 	// Note that this function is called by the connection initiator.
 
-	// Start timer, wait for ACK
-	// Wait to receive an Ack indicating that the receiver is open to connections 
-	// If timeout - Send again
-	// Maybe: If 3 failed attempts, disconnect?
-	// While(not 3 failed attempts)
-	// 		Do the thing
-	
-	this->state = ESTABLISHED;
-	cerr << "INFO: Connection ESTABLISHED\n";
+
+	// Loop checks if 3 failed connection attempts occured, exits if they did
+	// Otherwise establishes reliable connection with remote host.
+	int attempts = 0;
+	while (this->state != ESTABLISHED){
+		if (attempts >= 20){
+			perror("Failed to connect to host.\n");
+			exit(1);
+		}
+		attempts += 1;
+		if (send(this->sock_fd, segment, sizeof(RDTHeader), 0) < 0) {
+			perror("conn1 send");
+		}
+
+		// Start timer, wait for ACK
+		// Also checks that the response from the receiver is the correct ACK 
+		char received_segment[MAX_SEG_SIZE];
+		memset(received_segment, 0, MAX_SEG_SIZE);
+
+		auto start_time = std::chrono::system_clock::now();
+		auto timeout_time = start_time + std::chrono::milliseconds(this->estimated_rtt + 4*this->dev_rtt);
+		while(std::chrono::system_clock::now() <= timeout_time){
+			if(recv(this->sock_fd, received_segment, MAX_SEG_SIZE, MSG_DONTWAIT) >= 0){
+				// cerr << "Response received from receiver\n";
+				hdr = (RDTHeader*)received_segment;
+				// cerr << "ack: " << hdr->ack_number << " seq_num: " << hdr->sequence_number << " is type conn: " << (hdr->type == RDT_CONN) << "\n";
+				if(hdr->type == RDT_CONN && hdr->sequence_number == 0 && hdr->ack_number == 0){
+					this->state = ESTABLISHED;
+					cerr << "INFO: Connection ESTABLISHED\n";
+					break;
+				}
+			}
+		}
+	}
 }
 
 
@@ -219,6 +248,7 @@ void ReliableSocket::send_data(const void *data, int length) {
 // In receiver.cpp
 int ReliableSocket::receive_data(char buffer[MAX_DATA_SIZE]) {
 	if (this->state != ESTABLISHED) {
+		ReliableSocket::connect_to_remote(buffer);
 		cerr << "INFO: Cannot receive: Connection not established.\n";
 		return 0;
 	}
@@ -292,5 +322,5 @@ void ReliableSocket::close_connection() {
 
 
 bool isCorrupt(char *checksum, char *payload){
-	break;
+	return true;
 }
