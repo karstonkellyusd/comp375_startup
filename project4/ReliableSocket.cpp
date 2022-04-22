@@ -24,7 +24,8 @@
 #include "rdt_time.h"
 
 using std::cerr;
-
+using std::cout;
+//TODO make sure timeouts are of correct length
 /*
  * NOTE: Function header comments shouldn't go in this file: they should be put
  * in the ReliableSocket header file.
@@ -109,13 +110,24 @@ void ReliableSocket::accept_connection(int port_num) {
 	hdr->ack_number = htonl(0);
 	hdr->sequence_number = htonl(this->sequence_number);
 	hdr->type = RDT_CONN;
-	if (send(this->sock_fd, segment, sizeof(RDTHeader), 0) < 0) {
-		perror("ERROR: Did not properly send ACK");
+	// send_and_wait(segment, ack_num)
+	while(this->state != ESTABLISHED){
+		if (send(this->sock_fd, segment, sizeof(RDTHeader), 0) < 0) {
+			perror("ERROR: Did not properly send ACK");
+		}
+		auto start_time = std::chrono::system_clock::now();
+		auto timeout_time = start_time + std::chrono::milliseconds(this->estimated_rtt + 4*this->dev_rtt);
+		while(std::chrono::system_clock::now() <= timeout_time){
+			if (recv(this->sock_fd, received_segment, MAX_SEG_SIZE, MSG_DONTWAIT) >= 0){
+				if(hdr->type == RDT_ACK /*And is not corrupt*/){
+					this->state = ESTABLISHED;
+					cerr << "INFO: Connection ESTABLISHED\n";
+					break;
+				}
+			}
+		}
 	}
 	this->sequence_number += 1;
-	
-	this->state = ESTABLISHED;
-	cerr << "INFO: Connection ESTABLISHED\n";
 }
 
 // Is called in Sender.cpp
@@ -176,10 +188,8 @@ void ReliableSocket::connect_to_remote(char *hostname, int port_num) {
 		auto timeout_time = start_time + std::chrono::milliseconds(this->estimated_rtt + 4*this->dev_rtt);
 		while(std::chrono::system_clock::now() <= timeout_time){
 			if(recv(this->sock_fd, received_segment, MAX_SEG_SIZE, MSG_DONTWAIT) >= 0){
-				// cerr << "Response received from receiver\n";
 				hdr = (RDTHeader*)received_segment;
-				// cerr << "ack: " << hdr->ack_number << " seq_num: " << hdr->sequence_number << " is type conn: " << (hdr->type == RDT_CONN) << "\n";
-				if(hdr->type == RDT_CONN && hdr->sequence_number == 0 && hdr->ack_number == 0){
+				if(hdr->type == RDT_ACK){
 					this->state = ESTABLISHED;
 					cerr << "INFO: Connection ESTABLISHED\n";
 					break;
@@ -248,7 +258,6 @@ void ReliableSocket::send_data(const void *data, int length) {
 // In receiver.cpp
 int ReliableSocket::receive_data(char buffer[MAX_DATA_SIZE]) {
 	if (this->state != ESTABLISHED) {
-		ReliableSocket::connect_to_remote(buffer);
 		cerr << "INFO: Cannot receive: Connection not established.\n";
 		return 0;
 	}
@@ -258,7 +267,10 @@ int ReliableSocket::receive_data(char buffer[MAX_DATA_SIZE]) {
 
 	// Set up pointers to both the header (hdr) and data (data) portions of
 	// the received segment.
-	RDTHeader* hdr = (RDTHeader*)received_segment;	
+	RDTHeader* hdr = (RDTHeader*)received_segment;
+	if (hdr->type == RDT_CONN){
+		accept_connection()
+	}
 	void *data = (void*)(received_segment + sizeof(RDTHeader));
 
 	int recv_count = recv(this->sock_fd, received_segment, MAX_SEG_SIZE, 0);
@@ -279,11 +291,15 @@ int ReliableSocket::receive_data(char buffer[MAX_DATA_SIZE]) {
 	// Message type will have an ack number equal to the sequence number
 	// Loop until all data received or long timeout
 
-
-	cerr << "INFO: Received segment. " 
+	//If the data received is good
+	if(hdr->type == RDT_DATA){
+		hdr->sequence_number = hdr->sequence_number+1;
+		cerr << "INFO: Received segment. " 
 		 << "seq_num = "<< ntohl(hdr->sequence_number) << ", "
 		 << "ack_num = "<< ntohl(hdr->ack_number) << ", "
 		 << ", type = " << hdr->type << "\n";
+
+	}
 
 	int recv_data_size = recv_count - sizeof(RDTHeader);
 	memcpy(buffer, data, recv_data_size);
@@ -321,6 +337,6 @@ void ReliableSocket::close_connection() {
 }
 
 
-bool isCorrupt(char *checksum, char *payload){
+bool notCorrupt(char *checksum, char *payload){
 	return true;
 }
