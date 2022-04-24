@@ -10,10 +10,7 @@
 // C++ library includes
 #include <iostream>
 #include <string.h>
-
-//WE can delete this
-#include <stdio.h>
-#include <stdlib.h>
+#include <chrono>
 
 // OS specific includes
 #include <unistd.h>
@@ -378,7 +375,12 @@ void ReliableSocket::close_connection() {
 	// connection has been closed.
 
 	this->set_timeout_length(this->estimated_rtt*1.5);
+	int timeouts = 0;
 	while(true){
+		if (timeouts > 3){
+			break;
+		}
+		timeouts+=1;
 		if (send(this->sock_fd, segment, sizeof(RDTHeader), 0) < 0) {
 			perror("close send");
 		}
