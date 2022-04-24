@@ -324,13 +324,8 @@ int ReliableSocket::receive_data(char buffer[MAX_DATA_SIZE]) {
 			send_hdr->ack_number = htonl(hdr->sequence_number);
 			send_hdr->type = RDT_ACK;
 			// cerr << "Sending ack: " << ntohl(hdr->sequence_number) << "\n";
-			if ((rand() % 10) > 0){
-				if (send(this->sock_fd, send_segment, sizeof(RDTHeader), 0) < 0) {
-					perror("Error sending ack in response to data received");
-				}
-			}
-			else{
-				cerr << "Ack was dropped\n";
+			if (send(this->sock_fd, send_segment, sizeof(RDTHeader), 0) < 0) {
+				perror("Error sending ack in response to data received");
 			}
 
 			cerr << "INFO: Received segment. " 
