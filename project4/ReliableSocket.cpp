@@ -11,6 +11,10 @@
 #include <iostream>
 #include <string.h>
 
+//WE can delete this
+#include <stdio.h>
+#include <stdlib.h>
+
 // OS specific includes
 #include <unistd.h>
 #include <sys/types.h>
@@ -129,14 +133,13 @@ void ReliableSocket::accept_connection(int port_num) {
 		this->set_timeout_length(this->estimated_rtt + 4*this->dev_rtt);
 		if (recv(this->sock_fd, received_segment, MAX_SEG_SIZE, 0) != EWOULDBLOCK){
 			RDTHeader* rec_hdr = (RDTHeader*)received_segment;
-			if(rec_hdr->type == RDT_ACK /*And is not corrupt*/){
+			if(rec_hdr->type == RDT_ACK){
 				this->state = ESTABLISHED;
 				cerr << "INFO: Connection ESTABLISHED\n";
 				break;
 			}
 		}
 	}
-	this->sequence_number += 1;
 }
 
 // Is called in Sender.cpp
@@ -237,17 +240,17 @@ void ReliableSocket::send_data(const void *data, int length) {
 
  	// Create the segment, which contains a header followed by the data.
 	char segment[MAX_SEG_SIZE];
+	memset(segment, 0, MAX_SEG_SIZE);
 
 	// Fill in the header
 	RDTHeader *hdr = (RDTHeader*)segment;
-	hdr->sequence_number = htonl(sequence_number);
+	
+	hdr->sequence_number = htonl(this->sequence_number);
 	hdr->ack_number = htonl(0);
 	hdr->type = RDT_DATA;
-
 	// Copy the user-supplied data to the spot right past the 
 	// 	header (i.e. hdr+1).
 	memcpy(hdr+1, data, length);
-	//this->sequence_number++;
 	while(true){
 		if (send(this->sock_fd, segment, sizeof(RDTHeader)+length, 0) < 0) {
 			perror("send_data send");
@@ -259,13 +262,14 @@ void ReliableSocket::send_data(const void *data, int length) {
 		memset(received_segment, 0, MAX_SEG_SIZE);
 		if (recv(this->sock_fd, received_segment, MAX_SEG_SIZE, 0) != EWOULDBLOCK){
 			RDTHeader* rec_hdr = (RDTHeader*)received_segment;
-			if((rec_hdr->type == RDT_ACK) && (this->sequence_number == rec_hdr->sequence_number)){
-				cerr << "INFO: Data Packet " << rec_hdr->sequence_number << " Sent and Received\n";
+			if((rec_hdr->type == RDT_ACK) && (this->sequence_number == rec_hdr->ack_number)){
+				cerr << "INFO: Data Packet " << rec_hdr->ack_number << " Sent and Received\n";
+				this->sequence_number += 1;
 				return;
 			}
 			// IF the third message of the handshake is lost we may
 			// receive an additional RDT_CONN message and that is handeled
-			// here and then the ack is resent
+			// here and then the ack and the sending data is resent
 			else if(rec_hdr->type == RDT_CONN){
 				char send_segment[sizeof(RDTHeader)];
 				RDTHeader* send_hdr = (RDTHeader*)send_segment;
@@ -273,7 +277,7 @@ void ReliableSocket::send_data(const void *data, int length) {
 				send_hdr->sequence_number = htonl(0);
 				send_hdr->type = RDT_ACK;
 				if (send(this->sock_fd, send_segment, sizeof(RDTHeader), 0) < 0) {
-					perror("Error sending ack in response to CONN");
+					perror("Error sending ack in response to CONN\n");
 				}
 			}
 		}
@@ -294,19 +298,6 @@ int ReliableSocket::receive_data(char buffer[MAX_DATA_SIZE]) {
 		return 0;
 	}
 
-	char received_segment[MAX_SEG_SIZE];
-	memset(received_segment, 0, MAX_SEG_SIZE);
-	
-	RDTHeader* hdr = (RDTHeader*)received_segment;
-
-	void *data = (void*)(received_segment + sizeof(RDTHeader));
-
-	int recv_count = recv(this->sock_fd, received_segment, MAX_SEG_SIZE, 0);
-	if (recv_count < 0) {
-		perror("receive_data recv");
-		exit(EXIT_FAILURE);
-	}
-
 	// TODO: You should send back some sort of acknowledment that you
 	// received some data, but first you'll need to make sure that what you
 	// received is the type you want (RDT_DATA) and has the right sequence
@@ -320,19 +311,50 @@ int ReliableSocket::receive_data(char buffer[MAX_DATA_SIZE]) {
 	// Loop until all data received or long timeout
 
 	//If the data received is good
-	if(hdr->type == RDT_DATA){
-		hdr->sequence_number = hdr->sequence_number+1;
+	char received_segment[MAX_SEG_SIZE];
+	memset(received_segment, 0, MAX_SEG_SIZE);	
+	// TODO remove some of this weird code I wrote
+	// while (recv_count < 0){
+	int recv_count = recv(this->sock_fd, received_segment, MAX_SEG_SIZE, 0);
+		// if (recv_count == EAGAIN){
+		// 	cerr << "timeout on recv trying again \n";
+		// }
+	if (recv_count < 0) {
+		perror("receive_data recv");
+		exit(EXIT_FAILURE);
+	}
+	// }
+
+	RDTHeader* hdr = (RDTHeader*)received_segment;
+	// hdr->sequ
+	// If the package we received is the next set of data
+	if(hdr->type == RDT_DATA && htonl(this->expected_sequence_number) == hdr->sequence_number){
+		// Send an ack with ack_num = to hdr.sequence_num
+		char send_segment[sizeof(RDTHeader)];
+		RDTHeader* send_hdr = (RDTHeader*)send_segment;
+		send_hdr->ack_number = htonl(hdr->sequence_number);
+		send_hdr->type = RDT_ACK;
+		
+		if ((rand() % 2) > 0){ 
+			if (send(this->sock_fd, send_segment, sizeof(RDTHeader), 0) < 0) {
+				perror("Error sending ack in response to data received");
+			}
+		}
+
 		cerr << "INFO: Received segment. " 
 		 << "seq_num = "<< ntohl(hdr->sequence_number) << ", "
-		 << "ack_num = "<< ntohl(hdr->ack_number) << ", "
+		//  << "ack_num = "<< ntohl(hdr->ack_number) << ", "
 		 << ", type = " << hdr->type << "\n";
 
+		void *data = (void*)(received_segment + sizeof(RDTHeader));
+		this->expected_sequence_number += 1;
+		int recv_data_size = recv_count - sizeof(RDTHeader);
+		memcpy(buffer, data, recv_data_size);
+		return recv_data_size;
 	}
-
-	int recv_data_size = recv_count - sizeof(RDTHeader);
-	memcpy(buffer, data, recv_data_size);
-
-	return recv_data_size;
+	else{
+		return 0;
+	}
 }
 
 // In both receiver.cpp and sender.cpp
