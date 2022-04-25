@@ -249,13 +249,17 @@ void ReliableSocket::send_data(const void *data, int length) {
 	memcpy(hdr+1, data, length);
 	this->set_timeout_length(std::min((int)(this->estimated_rtt * 1.5), 500));
 	int attempts = 0;
+	bool no_repeat_send = false;
 	while(true){
 		if (attempts > 10){
 			cerr << "Maximum data send attempt exceeded exiting\n";
 			exit(EXIT_FAILURE);
 		}
 		cerr << "Sending pakcage " << ntohl(hdr->sequence_number) << "\n";
-		if (send(this->sock_fd, segment, sizeof(RDTHeader)+length, 0) < 0) {
+		if (no_repeat_send){
+			no_repeat_send = false;
+		}
+		else if (send(this->sock_fd, segment, sizeof(RDTHeader)+length, 0) < 0) {
 			perror("send_data send");
 			exit(EXIT_FAILURE);
 		}
@@ -263,6 +267,7 @@ void ReliableSocket::send_data(const void *data, int length) {
 		char received_segment[MAX_SEG_SIZE];
 		memset(received_segment, 0, MAX_SEG_SIZE);
 		if (recv(this->sock_fd, received_segment, MAX_SEG_SIZE, 0) > 0){
+			no_repeat_send = true;
 			attempts += 1;
 			RDTHeader* rec_hdr = (RDTHeader*)received_segment;
 			if((rec_hdr->type == RDT_ACK) && (this->sequence_number == rec_hdr->ack_number)){
