@@ -82,7 +82,7 @@ void ReliableSocket::accept_connection(int port_num) {
 		hdr = (RDTHeader*)segment;
 		if (hdr->type != RDT_CONN) {
 			cerr << "ERROR: Didn't get the expected RDT_CONN type.\n";
-			attempt++;
+			attempts++;
 		}
 		break;
 	}
@@ -114,7 +114,7 @@ void ReliableSocket::accept_connection(int port_num) {
 	hdr->ack_number = htonl(0);
 	hdr->sequence_number = htonl(0);
 	hdr->type = RDT_CONN;
-	int attempts = 0;
+	attempts = 0;
 	while(this->state != ESTABLISHED){
 		if (attempts > 10){
 			cerr << "Maximum attempts reached";
@@ -188,6 +188,7 @@ void ReliableSocket::connect_to_remote(char *hostname, int port_num) {
 			exit(1);
 		}
 		attempts += 1;
+		cerr << "Attempting to connect to host\n";
 		if (send(this->sock_fd, segment, sizeof(RDTHeader), 0) < 0) {
 			perror("conn1 send");
 		}
@@ -394,7 +395,7 @@ void ReliableSocket::close_connection() {
 	this->set_timeout_length(50);
 	int timeouts = 0;
 	while(true){
-		if (timeouts > 4){
+		if (timeouts > 2){
 			break;
 		}
 		timeouts+=1;
