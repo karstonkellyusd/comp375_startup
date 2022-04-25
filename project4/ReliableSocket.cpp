@@ -81,7 +81,6 @@ void ReliableSocket::accept_connection(int port_num) {
 		}
 		hdr = (RDTHeader*)segment;
 		if (hdr->type != RDT_CONN) {
-			cerr << "ERROR: Didn't get the expected RDT_CONN type.\n";
 			attempts++;
 		}
 		break;
@@ -118,7 +117,7 @@ void ReliableSocket::accept_connection(int port_num) {
 	while(this->state != ESTABLISHED){
 		if (attempts > 10){
 			cerr << "Maximum attempts reached";
-			exit(1);
+			exit(EXIT_FAILURE);
 		}
 		attempts += 1;
 		if (send(this->sock_fd, segment, sizeof(RDTHeader), 0) < 0) {
@@ -129,7 +128,9 @@ void ReliableSocket::accept_connection(int port_num) {
 		memset(received_segment, 0, MAX_SEG_SIZE);
 
 		this->set_timeout_length(this->estimated_rtt*1.5);
-		if (recv(this->sock_fd, received_segment, MAX_SEG_SIZE, 0) != EWOULDBLOCK){
+		int recv_count = recv(this->sock_fd, received_segment, MAX_SEG_SIZE, 0);
+		// If not error
+		if (recv_count > 0){
 			attempts = 0;
 			RDTHeader* rec_hdr = (RDTHeader*)received_segment;
 			if(rec_hdr->type == RDT_ACK){
@@ -141,6 +142,10 @@ void ReliableSocket::accept_connection(int port_num) {
 				cerr << "INFO: Connection ESTABLISHED\n";
 				break;
 			}
+		}
+		else if (recv_count != EWOULDBLOCK){
+			perror("Unexpected error receiving ack");
+			exit(EXIT_FAILURE);
 		}
 	}
 }
@@ -185,10 +190,9 @@ void ReliableSocket::connect_to_remote(char *hostname, int port_num) {
 	while (this->state != ESTABLISHED){
 		if (attempts >= 10){
 			perror("Failed to connect to host.\n");
-			exit(1);
+			exit(EXIT_FAILURE);
 		}
 		attempts += 1;
-		cerr << "Attempting to connect to host\n";
 		if (send(this->sock_fd, segment, sizeof(RDTHeader), 0) < 0) {
 			perror("conn1 send");
 		}
@@ -198,7 +202,8 @@ void ReliableSocket::connect_to_remote(char *hostname, int port_num) {
 		this->set_timeout_length(this->estimated_rtt*1.5);
 		char received_segment[MAX_SEG_SIZE];
 		memset(received_segment, 0, MAX_SEG_SIZE);
-		if(recv(this->sock_fd, received_segment, MAX_SEG_SIZE, 0) != EWOULDBLOCK){
+		int recv_count = recv(this->sock_fd, received_segment, MAX_SEG_SIZE, 0);
+		if(recv_count > 0){
 			RDTHeader* rec_hdr = (RDTHeader*)received_segment;
 			memset(received_segment, 0, MAX_SEG_SIZE);
 			if(rec_hdr->type == RDT_CONN){
@@ -211,6 +216,10 @@ void ReliableSocket::connect_to_remote(char *hostname, int port_num) {
 				}
 				break;
 			}
+		}
+		else if (recv_count != EWOULDBLOCK){
+			perror("Unxpected connect to host data recv error\n");
+			exit(EXIT_FAILURE);
 		}
 	}
 }
@@ -262,7 +271,6 @@ void ReliableSocket::send_data(const void *data, int length) {
 			exit(EXIT_FAILURE);
 		}
 		attempts += 1;
-		cerr << "Sending pakcage " << ntohl(hdr->sequence_number) << "\n";
 		if (no_repeat_send){
 			no_repeat_send = false;
 		}
@@ -280,7 +288,6 @@ void ReliableSocket::send_data(const void *data, int length) {
 				auto end_time = std::chrono::system_clock::now();
 				std::chrono::duration<double> sample_rtt = end_time - start_time;
 				this->estimated_rtt = std::min((int)(.875 * this->estimated_rtt + .125 * sample_rtt.count()), 500);
-				cerr << "This is the new rtt: " << this->estimated_rtt << "\n";
 				cerr << "INFO: Data Packet " << rec_hdr->ack_number << " Sent and Received\n";
 				this->sequence_number += 1;
 				return;
@@ -302,7 +309,6 @@ void ReliableSocket::send_data(const void *data, int length) {
 			}
 		}
 		else{
-			cerr << "Oh no a timeout thats ok ill change estimated r_tt\n";
 			this->estimated_rtt = (int)(1.2*this->estimated_rtt);
 			this->set_timeout_length(std::min((int)(this->estimated_rtt * 1.5), 500));
 		}
@@ -313,7 +319,6 @@ void ReliableSocket::send_data(const void *data, int length) {
 	// a certain amount of waiting (so you can try sending again).
 }
 
-// In receiver.cpp
 int ReliableSocket::receive_data(char buffer[MAX_DATA_SIZE]) {
 	if (this->state != ESTABLISHED) {
 		cerr << "INFO: Cannot receive: Connection not established.\n";
@@ -336,22 +341,18 @@ int ReliableSocket::receive_data(char buffer[MAX_DATA_SIZE]) {
 		}
 		RDTHeader* hdr = (RDTHeader*)received_segment;
 		// If the package we received is the next set of data
-		// cerr << "Received a packet with seq: " << ntohl(hdr->sequence_number) << " Expected: " << this->expected_sequence_number << "\n";
 		if(hdr->type == RDT_DATA && this->expected_sequence_number == ntohl(hdr->sequence_number)){
-			// cerr << "Received a Data packet\n";
 			char send_segment[sizeof(RDTHeader)];
 			memset(send_segment, 0, sizeof(RDTHeader));
 			RDTHeader* send_hdr = (RDTHeader*)send_segment;
 			send_hdr->ack_number = htonl(hdr->sequence_number);
 			send_hdr->type = RDT_ACK;
-			// cerr << "Sending ack: " << ntohl(hdr->sequence_number) << "\n";
 			if (send(this->sock_fd, send_segment, sizeof(RDTHeader), 0) < 0) {
 				perror("Error sending ack in response to data received");
 			}
 
 			cerr << "INFO: Received segment. " 
-			<< "seq_num = "<< ntohl(hdr->sequence_number) << ", "
-			//<< "ack_num = "<< ntohl(hdr->ack_number) << ", "
+			<< "seq_num = "<< ntohl(hdr->sequence_number)
 			<< ", type = " << hdr->type << "\n";
 
 			void *data = (void*)(received_segment + sizeof(RDTHeader));
@@ -366,13 +367,11 @@ int ReliableSocket::receive_data(char buffer[MAX_DATA_SIZE]) {
 			RDTHeader* send_hdr = (RDTHeader*)send_segment;
 			send_hdr->ack_number = ntohl(hdr->sequence_number);
 			send_hdr->type = RDT_ACK;
-			cerr << "Sending out of order ack: " << ntohl(hdr->sequence_number) << " I expect: " << this->expected_sequence_number << "\n";
 			if (send(this->sock_fd, send_segment, sizeof(RDTHeader), 0) < 0) {
 				perror("Error sending ack for repeat received segment");
 			}
 		}
 		else if(hdr->type == RDT_CLOSE){
-			// cerr << "Received a packet but it was the wrong type\n";
 			return 0;
 		}
 	}
@@ -418,16 +417,14 @@ void ReliableSocket::close_connection() {
 			RDTHeader* rec_hdr = (RDTHeader*)received_segment;
 			if(rec_hdr->type == RDT_CLOSE){
 				hdr->type = RDT_ACK;
-				cerr << "Received a close packet exiting\n";
 				if (send(this->sock_fd, segment, sizeof(RDTHeader), 0) < 0){
 					perror("error sending ack in response to close");
-					exit(1);
+					exit(EXIT_FAILURE);
 				}
 				this->state = CLOSED;
 				break;
 			}
 			else if(rec_hdr->type == RDT_ACK){
-				cerr << "Recieved ACK packet exiting\n";
 				this->state = CLOSED;
 				break;
 			}
@@ -437,7 +434,6 @@ void ReliableSocket::close_connection() {
 				RDTHeader* send_hdr = (RDTHeader*)send_segment;
 				send_hdr->ack_number = ntohl(rec_hdr->sequence_number);
 				send_hdr->type = RDT_ACK;
-				cerr << "Sending last repeat ack: " << ntohl(rec_hdr->sequence_number) << " for received repeat packet\n";
 				if (send(this->sock_fd, send_segment, sizeof(RDTHeader), 0) < 0) {
 					perror("Error sending ack for repeat received segment");
 				}
