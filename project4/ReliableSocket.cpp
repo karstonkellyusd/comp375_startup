@@ -70,11 +70,21 @@ void ReliableSocket::accept_connection(int port_num) {
 	struct sockaddr_in fromaddr;
 	unsigned int addrlen = sizeof(fromaddr);
 	// Will always eventually receive an initial CONN message
-	int recv_count = recvfrom(this->sock_fd, segment, MAX_SEG_SIZE, 0, 
-								(struct sockaddr*)&fromaddr, &addrlen);		
-	if (recv_count < 0) {
-		perror("accept recvfrom");
-		exit(EXIT_FAILURE);
+	int attempts = 0;
+	RDTHeader* hdr;
+	while (attempts < 5){
+		int recv_count = recvfrom(this->sock_fd, segment, MAX_SEG_SIZE, 0, 
+									(struct sockaddr*)&fromaddr, &addrlen);		
+		if (recv_count < 0) {
+			perror("accept recvfrom");
+			exit(EXIT_FAILURE);
+		}
+		hdr = (RDTHeader*)segment;
+		if (hdr->type != RDT_CONN) {
+			cerr << "ERROR: Didn't get the expected RDT_CONN type.\n";
+			attempt++;
+		}
+		break;
 	}
 
 	/*
@@ -91,12 +101,7 @@ void ReliableSocket::accept_connection(int port_num) {
 	// Check that segment was the right type of message, namely a RDT_CONN
 	// message to indicate that the remote host wants to start a new
 	// connection with us.
-	RDTHeader* hdr = (RDTHeader*)segment;
-	if (hdr->type != RDT_CONN) {
-		cerr << "ERROR: Didn't get the expected RDT_CONN type.\n";
-		exit(EXIT_FAILURE);
-	}
-
+	
 	// Handshaking protocol to make sure that
 	// both sides are correctly connected (e.g. what happens if the RDT_CONN
 	// message from the other end gets lost?)
@@ -255,6 +260,7 @@ void ReliableSocket::send_data(const void *data, int length) {
 			cerr << "Maximum data send attempt exceeded exiting\n";
 			exit(EXIT_FAILURE);
 		}
+		attempts += 1;
 		cerr << "Sending pakcage " << ntohl(hdr->sequence_number) << "\n";
 		if (no_repeat_send){
 			no_repeat_send = false;
@@ -268,7 +274,6 @@ void ReliableSocket::send_data(const void *data, int length) {
 		memset(received_segment, 0, MAX_SEG_SIZE);
 		if (recv(this->sock_fd, received_segment, MAX_SEG_SIZE, 0) > 0){
 			no_repeat_send = true;
-			attempts += 1;
 			RDTHeader* rec_hdr = (RDTHeader*)received_segment;
 			if((rec_hdr->type == RDT_ACK) && (this->sequence_number == rec_hdr->ack_number)){
 				auto end_time = std::chrono::system_clock::now();
@@ -385,11 +390,11 @@ void ReliableSocket::close_connection() {
 
 	// Reliably closies the connection to make sure both sides know that the
 	// connection has been closed.
-
-	this->set_timeout_length(this->estimated_rtt*1.5);
+	//standardize timeout length for sender and receiver
+	this->set_timeout_length(50);
 	int timeouts = 0;
 	while(true){
-		if (timeouts > 5){
+		if (timeouts > 4){
 			break;
 		}
 		timeouts+=1;
@@ -401,7 +406,7 @@ void ReliableSocket::close_connection() {
 		int recv_count = recv(this->sock_fd, received_segment, MAX_SEG_SIZE, 0);
 		//Catch timeout
 		if (recv_count == -1){
-			this->estimated_rtt = (int)(1.2*this->estimated_rtt);
+			this->estimated_rtt = (int)(2*this->estimated_rtt);
 			this->set_timeout_length(this->estimated_rtt*1.5);
 		}
 		else if (recv_count < 0) {
