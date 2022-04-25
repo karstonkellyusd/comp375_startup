@@ -417,6 +417,17 @@ void ReliableSocket::close_connection() {
 				this->state = CLOSED;
 				break;
 			}
+			else if(rec_hdr->type == RDT_DATA){
+				char send_segment[sizeof(RDTHeader)];
+				memset(send_segment, 0, sizeof(RDTHeader));
+				RDTHeader* send_hdr = (RDTHeader*)send_segment;
+				send_hdr->ack_number = rec_hdr->sequence_number;
+				send_hdr->type = RDT_ACK;
+				cerr << "Sending repeat ack: " << ntohl(rec_hdr->sequence_number) << " for received repeat packet\n";
+				if (send(this->sock_fd, send_segment, sizeof(RDTHeader), 0) < 0) {
+					perror("Error sending ack for repeat received segment");
+				}
+			}
 			else{
 				memset(received_segment, 0, MAX_SEG_SIZE);
 			}
