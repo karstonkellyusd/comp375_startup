@@ -256,7 +256,13 @@ void ReliableSocket::send_data(const void *data, int length) {
 		auto start_time = std::chrono::system_clock::now();
 		char received_segment[MAX_SEG_SIZE];
 		memset(received_segment, 0, MAX_SEG_SIZE);
+		int attempts = 0;
 		if (recv(this->sock_fd, received_segment, MAX_SEG_SIZE, 0) > 0){
+			if (attempts > 10){
+				cerr << "Maximum data send attempt exceeded exiting\n";
+				exit(EXIT_FAILURE);
+			}
+			attempts += 1;
 			RDTHeader* rec_hdr = (RDTHeader*)received_segment;
 			if((rec_hdr->type == RDT_ACK) && (this->sequence_number == rec_hdr->ack_number)){
 				auto end_time = std::chrono::system_clock::now();
@@ -322,6 +328,7 @@ int ReliableSocket::receive_data(char buffer[MAX_DATA_SIZE]) {
 		if(hdr->type == RDT_DATA && this->expected_sequence_number == ntohl(hdr->sequence_number)){
 			// cerr << "Received a Data packet\n";
 			char send_segment[sizeof(RDTHeader)];
+			memset(send_segment, 0, sizeof(RDTHeader));
 			RDTHeader* send_hdr = (RDTHeader*)send_segment;
 			send_hdr->ack_number = htonl(hdr->sequence_number);
 			send_hdr->type = RDT_ACK;
@@ -343,6 +350,7 @@ int ReliableSocket::receive_data(char buffer[MAX_DATA_SIZE]) {
 		}
 		else if(hdr->type == RDT_DATA && (this->expected_sequence_number > ntohl(hdr->sequence_number)) && (ntohl(hdr->sequence_number) > 0)){
 			char send_segment[sizeof(RDTHeader)];
+			memset(received_segment, 0, sizeof(RDTHeader));
 			RDTHeader* send_hdr = (RDTHeader*)send_segment;
 			send_hdr->ack_number = htonl(hdr->sequence_number);
 			send_hdr->type = RDT_ACK;
