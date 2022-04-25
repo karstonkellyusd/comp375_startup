@@ -116,21 +116,4 @@ private:
 	 * implementation should be in the .cpp file.
 	 */
 
-	/**
-	 * Function that will ensure the data being sent and received 
-	 * is not corrupted according to some checksum value.
-	 * 
-	 * @param checksum 
-	 * The value that will be used to verify the integrity of data being sent.
-	 * 
-	 * @param payload 
-	 * The data whose integrity will be checked.
-	 * 
-	 * @return true 
-	 * The data is corrupt.
-	 * 
-	 * @return false 
-	 * The data is not corrupt. 
-	 */
-	bool isCorrupt(char *checksum, char *payload);
 };
