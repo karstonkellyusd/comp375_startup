@@ -254,6 +254,7 @@ void ReliableSocket::send_data(const void *data, int length) {
 			cerr << "Maximum data send attempt exceeded exiting\n";
 			exit(EXIT_FAILURE);
 		}
+		cerr << "Sending pakcage " << hdr->sequence_number << "\n";
 		if (send(this->sock_fd, segment, sizeof(RDTHeader)+length, 0) < 0) {
 			perror("send_data send");
 			exit(EXIT_FAILURE);
@@ -352,9 +353,9 @@ int ReliableSocket::receive_data(char buffer[MAX_DATA_SIZE]) {
 			char send_segment[sizeof(RDTHeader)];
 			memset(send_segment, 0, sizeof(RDTHeader));
 			RDTHeader* send_hdr = (RDTHeader*)send_segment;
-			send_hdr->ack_number = hdr->sequence_number;
+			send_hdr->ack_number = ntohl(hdr->sequence_number);
 			send_hdr->type = RDT_ACK;
-			cerr << "Sending ack: " << ntohl(hdr->sequence_number) << " for received repeat packet\n";
+			cerr << "Sending out of order ack: " << ntohl(hdr->sequence_number) << " I expect: " << this->expected_sequence_number << "\n";
 			if (send(this->sock_fd, send_segment, sizeof(RDTHeader), 0) < 0) {
 				perror("Error sending ack for repeat received segment");
 			}
@@ -421,9 +422,9 @@ void ReliableSocket::close_connection() {
 				char send_segment[sizeof(RDTHeader)];
 				memset(send_segment, 0, sizeof(RDTHeader));
 				RDTHeader* send_hdr = (RDTHeader*)send_segment;
-				send_hdr->ack_number = rec_hdr->sequence_number;
+				send_hdr->ack_number = ntohl(rec_hdr->sequence_number);
 				send_hdr->type = RDT_ACK;
-				cerr << "Sending repeat ack: " << ntohl(rec_hdr->sequence_number) << " for received repeat packet\n";
+				cerr << "Sending last repeat ack: " << ntohl(rec_hdr->sequence_number) << " for received repeat packet\n";
 				if (send(this->sock_fd, send_segment, sizeof(RDTHeader), 0) < 0) {
 					perror("Error sending ack for repeat received segment");
 				}
