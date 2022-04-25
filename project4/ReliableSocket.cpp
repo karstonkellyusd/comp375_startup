@@ -128,9 +128,7 @@ void ReliableSocket::accept_connection(int port_num) {
 		memset(received_segment, 0, MAX_SEG_SIZE);
 
 		this->set_timeout_length(this->estimated_rtt*1.5);
-		int recv_count = recv(this->sock_fd, received_segment, MAX_SEG_SIZE, 0);
-		// If not error
-		if (recv_count > 0){
+		if (recv(this->sock_fd, received_segment, MAX_SEG_SIZE, 0) != EWOULDBLOCK){
 			attempts = 0;
 			RDTHeader* rec_hdr = (RDTHeader*)received_segment;
 			if(rec_hdr->type == RDT_ACK){
@@ -142,10 +140,6 @@ void ReliableSocket::accept_connection(int port_num) {
 				cerr << "INFO: Connection ESTABLISHED\n";
 				break;
 			}
-		}
-		else if (recv_count != EWOULDBLOCK){
-			perror("Unexpected error receiving ack");
-			exit(EXIT_FAILURE);
 		}
 	}
 }
@@ -202,8 +196,7 @@ void ReliableSocket::connect_to_remote(char *hostname, int port_num) {
 		this->set_timeout_length(this->estimated_rtt*1.5);
 		char received_segment[MAX_SEG_SIZE];
 		memset(received_segment, 0, MAX_SEG_SIZE);
-		int recv_count = recv(this->sock_fd, received_segment, MAX_SEG_SIZE, 0);
-		if(recv_count > 0){
+		if(recv(this->sock_fd, received_segment, MAX_SEG_SIZE, 0) != EWOULDBLOCK){
 			RDTHeader* rec_hdr = (RDTHeader*)received_segment;
 			memset(received_segment, 0, MAX_SEG_SIZE);
 			if(rec_hdr->type == RDT_CONN){
@@ -216,10 +209,6 @@ void ReliableSocket::connect_to_remote(char *hostname, int port_num) {
 				}
 				break;
 			}
-		}
-		else if (recv_count != EWOULDBLOCK){
-			perror("Unxpected connect to host data recv error\n");
-			exit(EXIT_FAILURE);
 		}
 	}
 }
