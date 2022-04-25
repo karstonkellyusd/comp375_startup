@@ -254,7 +254,7 @@ void ReliableSocket::send_data(const void *data, int length) {
 			cerr << "Maximum data send attempt exceeded exiting\n";
 			exit(EXIT_FAILURE);
 		}
-		cerr << "Sending pakcage " << hdr->sequence_number << "\n";
+		cerr << "Sending pakcage " << ntohl(hdr->sequence_number) << "\n";
 		if (send(this->sock_fd, segment, sizeof(RDTHeader)+length, 0) < 0) {
 			perror("send_data send");
 			exit(EXIT_FAILURE);
@@ -384,7 +384,7 @@ void ReliableSocket::close_connection() {
 	this->set_timeout_length(this->estimated_rtt*1.5);
 	int timeouts = 0;
 	while(true){
-		if (timeouts > 3){
+		if (timeouts > 5){
 			break;
 		}
 		timeouts+=1;
@@ -407,6 +407,7 @@ void ReliableSocket::close_connection() {
 			RDTHeader* rec_hdr = (RDTHeader*)received_segment;
 			if(rec_hdr->type == RDT_CLOSE){
 				hdr->type = RDT_ACK;
+				cerr << "Received a close packet exiting\n";
 				if (send(this->sock_fd, segment, sizeof(RDTHeader), 0) < 0){
 					perror("error sending ack in response to close");
 					exit(1);
@@ -415,6 +416,7 @@ void ReliableSocket::close_connection() {
 				break;
 			}
 			else if(rec_hdr->type == RDT_ACK){
+				cerr << "Recieved ACK packet exiting\n";
 				this->state = CLOSED;
 				break;
 			}
@@ -428,9 +430,6 @@ void ReliableSocket::close_connection() {
 				if (send(this->sock_fd, send_segment, sizeof(RDTHeader), 0) < 0) {
 					perror("Error sending ack for repeat received segment");
 				}
-			}
-			else{
-				memset(received_segment, 0, MAX_SEG_SIZE);
 			}
 		}
 	}
