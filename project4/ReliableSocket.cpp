@@ -109,13 +109,13 @@ void ReliableSocket::accept_connection(int port_num) {
 	hdr->ack_number = htonl(0);
 	hdr->sequence_number = htonl(0);
 	hdr->type = RDT_CONN;
-	// int attempts = 0;
+	int attempts = 0;
 	while(this->state != ESTABLISHED){
-		/*if (attempts > 20){
+		if (attempts > 10){
 			cerr << "Maximum attempts reached";
 			exit(1);
-		}*/
-		// attempts += 1;
+		}
+		attempts += 1;
 		if (send(this->sock_fd, segment, sizeof(RDTHeader), 0) < 0) {
 			perror("ERROR: Did not properly send ACK");
 		}
@@ -123,8 +123,9 @@ void ReliableSocket::accept_connection(int port_num) {
 		char received_segment[MAX_SEG_SIZE];
 		memset(received_segment, 0, MAX_SEG_SIZE);
 
-		this->set_timeout_length(this->estimated_rtt + 4*this->dev_rtt);
+		this->set_timeout_length(this->estimated_rtt*1.5);
 		if (recv(this->sock_fd, received_segment, MAX_SEG_SIZE, 0) != EWOULDBLOCK){
+			attempts = 0;
 			RDTHeader* rec_hdr = (RDTHeader*)received_segment;
 			if(rec_hdr->type == RDT_ACK){
 				this->state = ESTABLISHED;
@@ -163,6 +164,7 @@ void ReliableSocket::connect_to_remote(char *hostname, int port_num) {
 
 	// Send an RDT_CONN message to remote host to initiate an RDT connection.
 	char segment[sizeof(RDTHeader)];
+	memset(segment, 0, sizeof(RDTHeader));	
 	RDTHeader* hdr = (RDTHeader*)segment;
 
 	hdr->ack_number = htonl(0);
@@ -174,20 +176,20 @@ void ReliableSocket::connect_to_remote(char *hostname, int port_num) {
 	// Loop checks if 20 failed connection attempts occured, exits if they did
 	// Otherwise establishes reliable connection with remote host.
 
-	// int attempts = 0;
+	int attempts = 0;
 	while (this->state != ESTABLISHED){
-		/*if (attempts >= 20){
+		if (attempts >= 10){
 			perror("Failed to connect to host.\n");
 			exit(1);
-		}*/
-		// attempts += 1;
+		}
+		attempts += 1;
 		if (send(this->sock_fd, segment, sizeof(RDTHeader), 0) < 0) {
 			perror("conn1 send");
 		}
 
 		// Start timer, wait for ACK
 		// Also checks that the response from the receiver is the correct ACK 
-		this->set_timeout_length(this->estimated_rtt + 4*this->dev_rtt);
+		this->set_timeout_length(this->estimated_rtt*1.5);
 		char received_segment[MAX_SEG_SIZE];
 		memset(received_segment, 0, MAX_SEG_SIZE);
 		if(recv(this->sock_fd, received_segment, MAX_SEG_SIZE, 0) != EWOULDBLOCK){
@@ -271,6 +273,7 @@ void ReliableSocket::send_data(const void *data, int length) {
 			// here and then the ack and the sending data is resent
 			else if(rec_hdr->type == RDT_CONN){
 				char send_segment[sizeof(RDTHeader)];
+				memset(send_segment, 0, sizeof(RDTHeader));	
 				RDTHeader* send_hdr = (RDTHeader*)send_segment;
 				send_hdr->ack_number = htonl(0);
 				send_hdr->sequence_number = htonl(0);
@@ -281,9 +284,8 @@ void ReliableSocket::send_data(const void *data, int length) {
 			}
 		}
 		else{
-			// TODO Adjust the estimatedRTT of "this" 
 			cerr << "Oh no a timeout thats ok ill change estimated r_tt\n";
-			this->estimated_rtt = 2*this->estimated_rtt;
+			this->estimated_rtt = (int)(1.2*this->estimated_rtt);
 			this->set_timeout_length(std::min((int)(this->estimated_rtt * 1.5), 500));
 		}
 	}
@@ -360,6 +362,7 @@ void ReliableSocket::close_connection() {
 	// Construct a RDT_CLOSE message to indicate to the remote host that we
 	// want to end this connection.
 	char segment[sizeof(RDTHeader)];
+	memset(segment, 0, sizeof(RDTHeader));	
 	RDTHeader* hdr = (RDTHeader*)segment;
 
 	hdr->sequence_number = htonl(0);
@@ -384,7 +387,7 @@ void ReliableSocket::close_connection() {
 		int recv_count = recv(this->sock_fd, received_segment, MAX_SEG_SIZE, 0);
 		//Catch timeout
 		if (recv_count == -1){
-			this->estimated_rtt *= 2;
+			this->estimated_rtt = (int)(1.2*this->estimated_rtt);
 			this->set_timeout_length(this->estimated_rtt*1.5);
 		}
 		else if (recv_count < 0) {
